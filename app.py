@@ -10,20 +10,21 @@ url = st.secrets["SUPABASE_URL"]
 key = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(url, key)
 
-# 12분기(3년) 수익률 시나리오 (코로나 쇼크 및 회복기 모티브)
+# 12분기(3년) 수익률 시나리오
+# 주식: 변동성이 크지만 장기 우상향 / 채권: 잃지 않고 매 분기 1.0~1.5%의 안정적 수익
 market_data = {
-    1: {"stock": -20.0, "bond": 1.0, "label": "1년차 1분기 (시장 급락)"},
-    2: {"stock": 20.0, "bond": 0.5, "label": "1년차 2분기 (강한 반등)"},
-    3: {"stock": 8.5, "bond": 0.2, "label": "1년차 3분기"},
-    4: {"stock": 11.7, "bond": -0.5, "label": "1년차 4분기 (연말 결산)"},
-    5: {"stock": 5.0, "bond": 0.1, "label": "2년차 1분기"},
-    6: {"stock": -4.0, "bond": 0.2, "label": "2년차 2분기 (단기 조정)"},
-    7: {"stock": 6.0, "bond": 0.1, "label": "2년차 3분기"},
-    8: {"stock": 2.0, "bond": -0.2, "label": "2년차 4분기 (연말 결산)"},
-    9: {"stock": -8.0, "bond": 0.5, "label": "3년차 1분기 (인플레이션 우려)"},
-    10: {"stock": 3.0, "bond": 0.3, "label": "3년차 2분기"},
-    11: {"stock": -5.0, "bond": 0.6, "label": "3년차 3분기"},
-    12: {"stock": 4.0, "bond": 0.2, "label": "3년차 4분기 (최종 결산)"}
+    1: {"stock": -20.0, "bond": 1.2, "label": "1년차 1분기 (시장 급락)"},
+    2: {"stock": 20.0, "bond": 1.0, "label": "1년차 2분기 (강한 반등)"},
+    3: {"stock": 8.5, "bond": 1.5, "label": "1년차 3분기"},
+    4: {"stock": 11.7, "bond": 1.1, "label": "1년차 4분기 (연말 결산)"},
+    5: {"stock": 5.0, "bond": 1.4, "label": "2년차 1분기"},
+    6: {"stock": -4.0, "bond": 1.2, "label": "2년차 2분기 (단기 조정)"},
+    7: {"stock": 6.0, "bond": 1.3, "label": "2년차 3분기"},
+    8: {"stock": 2.0, "bond": 1.5, "label": "2년차 4분기 (연말 결산)"},
+    9: {"stock": -8.0, "bond": 1.1, "label": "3년차 1분기 (인플레이션 우려)"},
+    10: {"stock": 3.0, "bond": 1.4, "label": "3년차 2분기"},
+    11: {"stock": -5.0, "bond": 1.2, "label": "3년차 3분기"},
+    12: {"stock": 4.0, "bond": 1.5, "label": "3년차 4분기 (최종 결산)"}
 }
 
 # B그룹을 위한 분기별 K-POP 퀴즈 (매년 4분기는 결산이므로 제외)
@@ -82,9 +83,16 @@ if app_mode == "🙋‍♂️ 학생 로그인":
             
         elif current_phase == 0:
             st.warning("⏳ 아직 게임이 시작되지 않았습니다. 선생님의 지시를 기다려주세요.")
+            if st.button("🔄 선생님이 시작했다고 하시면 누르세요!"):
+                st.rerun()
             
         elif current_phase > 0:
             st.subheader(f"📅 현재 시점: {market_data[current_phase]['label']}")
+            
+            # --- [새로고침 버튼: 단계 전환용] ---
+            if st.button("🔄 다음 단계 새로고침 (선생님 지시 후 클릭)"):
+                st.rerun()
+            st.divider()
             
             # 중복 제출 방지용 상태 키
             submit_key = f"submit_{current_phase}"
@@ -97,13 +105,12 @@ if app_mode == "🙋‍♂️ 학생 로그인":
                 st.write(f"📈 이번 분기 채권 수익률: **{market_data[current_phase]['bond']}%**")
                 
                 if st.session_state[submit_key]:
-                    st.info("비중 확정이 완료되었습니다. 다음 분기를 기다려주세요.")
+                    st.success("✅ 비중 확정이 완료되었습니다. 대기해주세요.")
                 else:
                     new_stock_ratio = st.slider("다음 분기를 위한 '주식' 투자 비중을 결정하세요 (%)", 0, 100, int(user['stock_ratio']*100))
                     if st.button("비중 확정 및 제출"):
                         supabase.table("asset_allocation_player").update({"stock_ratio": new_stock_ratio / 100.0}).eq("id", user['id']).execute()
                         st.session_state[submit_key] = True
-                        st.success("제출 완료! 다음 분기를 기다려주세요.")
                         st.rerun()
                         
             # --- [B그룹: 분기 중 퀴즈 / 매년 말 성과 확인] ---
@@ -122,13 +129,12 @@ if app_mode == "🙋‍♂️ 학생 로그인":
                 else: 
                     st.write("📊 **1년간의 투자 성과가 도착했습니다!**")
                     if st.session_state[submit_key]:
-                        st.info("비중 확정이 완료되었습니다. 내년도 결과를 기다려주세요.")
+                        st.success("✅ 비중 확정이 완료되었습니다. 대기해주세요.")
                     else:
                         new_stock_ratio = st.slider("내년을 위한 '주식' 투자 비중을 결정하세요 (%)", 0, 100, int(user['stock_ratio']*100))
                         if st.button("비중 확정 및 제출"):
                             supabase.table("asset_allocation_player").update({"stock_ratio": new_stock_ratio / 100.0}).eq("id", user['id']).execute()
                             st.session_state[submit_key] = True
-                            st.success("제출 완료! 내년도 결과를 기다려주세요.")
                             st.rerun()
 
 # ---------------------------------------------------------
@@ -173,13 +179,12 @@ elif app_mode == "👨‍🏫 선생님 대시보드":
                     for p in players:
                         s_ratio = p['stock_ratio']
                         b_ratio = 1.0 - s_ratio
-                        # 수학적 자산 변동 공식
                         new_balance = p['balance'] * (s_ratio * (1 + stock_ret) + b_ratio * (1 + bond_ret))
                         supabase.table("asset_allocation_player").update({"balance": new_balance}).eq("id", p['id']).execute()
                         
                 # DB 상태 업데이트
                 supabase.table("asset_allocation_game_state").update({"current_phase": new_phase}).eq("id", 1).execute()
-                st.success(f"{new_phase}단계로 넘어갔습니다. 수익률이 자산에 반영되었습니다.")
+                st.success(f"{new_phase}단계로 넘어갔습니다. 학생들에게 새로고침을 누르라고 안내해주세요.")
                 st.rerun()
                 
         # --- [최종 결과 분석 화면] ---
@@ -203,7 +208,7 @@ elif app_mode == "👨‍🏫 선생님 대시보드":
             
             st.info("""
             **💡 수업 포인트:**
-            A그룹은 1분기 폭락장(-20%)에서 고통을 느끼고 주식 비중을 낮춰(약 41%), 이후의 V자 반등 혜택을 온전히 누리지 못했습니다. 
+            A그룹은 1분기 폭락장(-20%)에서 고통을 느끼고 주식 비중을 낮춰, 이후의 V자 반등 혜택을 온전히 누리지 못했습니다. 
             반면 1년 단위로 확인한 B그룹은 단기 소음에 휘둘리지 않고 주식의 높은 프리미엄을 획득했습니다. 이것이 인간의 '자기통제'와 관련된 근시안적 손실회피(MLA)입니다.
             """)
             
