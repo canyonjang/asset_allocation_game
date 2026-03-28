@@ -11,7 +11,6 @@ key = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(url, key)
 
 # 12분기(3년) 수익률 시나리오
-# 주식: 변동성이 크지만 장기 우상향 / 채권: 잃지 않고 매 분기 1.0~1.5%의 안정적 수익
 market_data = {
     1: {"stock": -20.0, "bond": 1.2, "label": "1년차 1분기 (시장 급락)"},
     2: {"stock": 20.0, "bond": 1.0, "label": "1년차 2분기 (강한 반등)"},
@@ -27,7 +26,6 @@ market_data = {
     12: {"stock": 4.0, "bond": 1.5, "label": "3년차 4분기 (최종 결산)"}
 }
 
-# B그룹을 위한 분기별 K-POP 퀴즈 (매년 4분기는 결산이므로 제외)
 quizzes = {
     1: {"q": "BTS의 데뷔 곡은 무엇일까요?", "options": ["No More Dream", "Fire", "Butter"], "ans": "No More Dream"},
     2: {"q": "블랙핑크 멤버 중 솔로 곡 'LALISA'를 발표한 멤버는?", "options": ["제니", "리사", "로제"], "ans": "리사"},
@@ -47,16 +45,16 @@ def get_current_phase():
 current_phase = get_current_phase()
 
 # ---------------------------------------------------------
-# 2. 화면 분기 (학생용 vs 선생님용)
+# 2. 화면 분기 (학생용 vs 교수님용)
 # ---------------------------------------------------------
 st.sidebar.title("모드 선택")
-app_mode = st.sidebar.radio("접속할 화면을 선택하세요", ["🙋‍♂️ 학생 로그인", "👨‍🏫 선생님 대시보드"])
+app_mode = st.sidebar.radio("접속할 화면을 선택하세요", ["🙋‍♂️ 학생 로그인", "👨‍🏫 교수님 대시보드"])
 
 if app_mode == "🙋‍♂️ 학생 로그인":
     st.title("📊 자산배분 게임")
     
     if 'user_data' not in st.session_state:
-        st.info("선생님이 안내해주신 자신의 이름을 입력하고 입장해주세요.")
+        st.info("교수님이 안내해주신 자신의 이름을 입력하고 입장해주세요.")
         student_name = st.text_input("이름 입력:")
         if st.button("로그인"):
             res = supabase.table("asset_allocation_player").select("*").eq("name", student_name).execute()
@@ -68,33 +66,29 @@ if app_mode == "🙋‍♂️ 학생 로그인":
                 st.error("명단에 이름이 없습니다. 정확히 입력했는지 확인해주세요.")
                 
     else:
-        # DB에서 최신 유저 정보를 매번 다시 불러옴 (자산 업데이트 반영)
         user_res = supabase.table("asset_allocation_player").select("*").eq("id", st.session_state['user_data']['id']).execute()
         user = user_res.data[0]
         st.session_state['user_data'] = user
         
         st.write(f"**👤 참여자:** {user['name']} | **현재 자산:** {user['balance']:,.0f}원")
         
-        # [게임 종료: 결과 확인]
         if current_phase == 13:
             st.balloons()
             st.header("🏆 3년간의 투자가 모두 종료되었습니다!")
-            st.write(f"최종 자산은 **{user['balance']:,.0f}원** 입니다. 전체 결과는 선생님 화면을 주목해주세요.")
+            st.write(f"최종 자산은 **{user['balance']:,.0f}원** 입니다. 전체 결과는 교수님 화면을 주목해주세요.")
             
         elif current_phase == 0:
-            st.warning("⏳ 아직 게임이 시작되지 않았습니다. 선생님의 지시를 기다려주세요.")
-            if st.button("🔄 선생님이 시작했다고 하시면 누르세요!"):
+            st.warning("⏳ 아직 게임이 시작되지 않았습니다. 교수님의 지시를 기다려주세요.")
+            if st.button("🔄 교수님이 시작했다고 하시면 누르세요!"):
                 st.rerun()
             
         elif current_phase > 0:
             st.subheader(f"📅 현재 시점: {market_data[current_phase]['label']}")
             
-            # --- [새로고침 버튼: 단계 전환용] ---
-            if st.button("🔄 다음 단계 새로고침 (선생님 지시 후 클릭)"):
+            if st.button("🔄 다음 단계 새로고침 (교수님 지시 후 클릭)"):
                 st.rerun()
             st.divider()
             
-            # 중복 제출 방지용 상태 키
             submit_key = f"submit_{current_phase}"
             if submit_key not in st.session_state:
                 st.session_state[submit_key] = False
@@ -104,12 +98,15 @@ if app_mode == "🙋‍♂️ 학생 로그인":
                 st.write(f"📉 이번 분기 주식 수익률: **{market_data[current_phase]['stock']}%**")
                 st.write(f"📈 이번 분기 채권 수익률: **{market_data[current_phase]['bond']}%**")
                 
-                if st.session_state[submit_key]:
+                if st.session_state[submit_key] or user.get('last_completed_phase') == current_phase:
                     st.success("✅ 비중 확정이 완료되었습니다. 대기해주세요.")
                 else:
                     new_stock_ratio = st.slider("다음 분기를 위한 '주식' 투자 비중을 결정하세요 (%)", 0, 100, int(user['stock_ratio']*100))
                     if st.button("비중 확정 및 제출"):
-                        supabase.table("asset_allocation_player").update({"stock_ratio": new_stock_ratio / 100.0}).eq("id", user['id']).execute()
+                        supabase.table("asset_allocation_player").update({
+                            "stock_ratio": new_stock_ratio / 100.0,
+                            "last_completed_phase": current_phase
+                        }).eq("id", user['id']).execute()
                         st.session_state[submit_key] = True
                         st.rerun()
                         
@@ -118,36 +115,61 @@ if app_mode == "🙋‍♂️ 학생 로그인":
                 if current_phase % 4 != 0: 
                     st.info("자산 운용팀에서 장기적 관점으로 자산을 굴리는 중입니다. 대기 시간 동안 퀴즈를 풀어보세요!")
                     quiz = quizzes.get(current_phase)
-                    if quiz:
+                    
+                    if st.session_state[submit_key] or user.get('last_completed_phase') == current_phase:
+                        st.success("✅ 퀴즈 제출이 완료되었습니다. 대기해주세요.")
+                    elif quiz:
                         st.write(f"**💡 Q. {quiz['q']}**")
                         answer = st.radio("정답을 선택하세요:", quiz['options'], key=f"q_{current_phase}")
                         if st.button("퀴즈 제출"):
+                            supabase.table("asset_allocation_player").update({
+                                "last_completed_phase": current_phase
+                            }).eq("id", user['id']).execute()
+                            
+                            st.session_state[submit_key] = True
                             if answer == quiz['ans']:
                                 st.success("정답입니다! 훌륭해요 🎉")
                             else:
                                 st.error(f"오답입니다. 정답은 '{quiz['ans']}' 입니다.")
+                            st.rerun()
                 else: 
                     st.write("📊 **1년간의 투자 성과가 도착했습니다!**")
-                    if st.session_state[submit_key]:
+                    
+                    # 1년(4분기) 누적 수익률 계산
+                    start_p = current_phase - 3
+                    stock_cum, bond_cum = 1.0, 1.0
+                    for p in range(start_p, current_phase + 1):
+                        stock_cum *= (1 + market_data[p]["stock"] / 100.0)
+                        bond_cum *= (1 + market_data[p]["bond"] / 100.0)
+                    annual_stock_ret = (stock_cum - 1) * 100
+                    annual_bond_ret = (bond_cum - 1) * 100
+                    
+                    st.info(f"📈 지난 1년간 누적 주식 수익률: **{annual_stock_ret:.1f}%**")
+                    st.info(f"📉 지난 1년간 누적 채권 수익률: **{annual_bond_ret:.1f}%**")
+                    
+                    if st.session_state[submit_key] or user.get('last_completed_phase') == current_phase:
                         st.success("✅ 비중 확정이 완료되었습니다. 대기해주세요.")
                     else:
                         new_stock_ratio = st.slider("내년을 위한 '주식' 투자 비중을 결정하세요 (%)", 0, 100, int(user['stock_ratio']*100))
                         if st.button("비중 확정 및 제출"):
-                            supabase.table("asset_allocation_player").update({"stock_ratio": new_stock_ratio / 100.0}).eq("id", user['id']).execute()
+                            supabase.table("asset_allocation_player").update({
+                                "stock_ratio": new_stock_ratio / 100.0,
+                                "last_completed_phase": current_phase
+                            }).eq("id", user['id']).execute()
                             st.session_state[submit_key] = True
                             st.rerun()
 
 # ---------------------------------------------------------
-# 3. 선생님 대시보드 화면
+# 3. 교수님 대시보드 화면
 # ---------------------------------------------------------
-elif app_mode == "👨‍🏫 선생님 대시보드":
+elif app_mode == "👨‍🏫 교수님 대시보드":
     st.title("👨‍🏫 관리자 대시보드 및 게임 통제")
     
     if 'admin_auth' not in st.session_state:
         st.session_state['admin_auth'] = False
 
     if not st.session_state['admin_auth']:
-        st.info("선생님 전용 페이지입니다. 비밀번호를 입력해주세요.")
+        st.info("교수님 전용 페이지입니다. 비밀번호를 입력해주세요.")
         pw_input = st.text_input("비밀번호", type="password") 
         if st.button("입장"):
             if pw_input == "3383":
@@ -165,12 +187,28 @@ elif app_mode == "👨‍🏫 선생님 대시보드":
         st.divider()
         st.write(f"### **현재 진행 단계:** {current_phase}단계 (13 = 최종 결과)")
         
-        # --- [다음 단계 진행 및 수익률 계산 로직] ---
+        # --- [학생 제출 현황 모니터링] ---
+        if 0 < current_phase < 13:
+            st.subheader("✅ 현재 단계 완료 현황 (퀴즈 & 자산조정)")
+            players_data = supabase.table("asset_allocation_player").select("last_completed_phase").execute().data
+            total_stu = len(players_data)
+            completed_stu = sum(1 for p in players_data if p.get("last_completed_phase") == current_phase)
+            
+            col_m1, col_m2 = st.columns([3, 1])
+            with col_m1:
+                st.metric("제출 완료 학생", f"{completed_stu}명 / {total_stu}명")
+                if total_stu > 0:
+                    st.progress(completed_stu / total_stu)
+            with col_m2:
+                if st.button("🔄 현황 새로고침"):
+                    st.rerun()
+            st.divider()
+        
+        # --- [다음 단계 진행 로직] ---
         if current_phase < 13:
             if st.button(f"⏩ {current_phase + 1}단계로 진행 (시장 수익률 일괄 적용)"):
                 new_phase = current_phase + 1
                 
-                # 학생 자산 업데이트 계산식 적용
                 if new_phase <= 12:
                     stock_ret = market_data[new_phase]["stock"] / 100.0
                     bond_ret = market_data[new_phase]["bond"] / 100.0
@@ -182,7 +220,6 @@ elif app_mode == "👨‍🏫 선생님 대시보드":
                         new_balance = p['balance'] * (s_ratio * (1 + stock_ret) + b_ratio * (1 + bond_ret))
                         supabase.table("asset_allocation_player").update({"balance": new_balance}).eq("id", p['id']).execute()
                         
-                # DB 상태 업데이트
                 supabase.table("asset_allocation_game_state").update({"current_phase": new_phase}).eq("id", 1).execute()
                 st.success(f"{new_phase}단계로 넘어갔습니다. 학생들에게 새로고침을 누르라고 안내해주세요.")
                 st.rerun()
@@ -213,8 +250,38 @@ elif app_mode == "👨‍🏫 선생님 대시보드":
             """)
             
         st.divider()
+        st.subheader("⚙️ 게임 초기화 및 학생 명단 관리")
         if st.button("🔄 게임 초기화 (시작 전으로 되돌리기 및 자산 리셋)"):
             supabase.table("asset_allocation_game_state").update({"current_phase": 0}).eq("id", 1).execute()
-            supabase.table("asset_allocation_player").update({"balance": 1000000, "stock_ratio": 0.5}).neq("id", "00000000-0000-0000-0000-000000000000").execute()
+            supabase.table("asset_allocation_player").update({
+                "balance": 1000000, 
+                "stock_ratio": 0.5,
+                "last_completed_phase": 0
+            }).neq("id", "00000000-0000-0000-0000-000000000000").execute()
             st.warning("게임이 0단계로 초기화되고 모든 학생의 자산이 100만 원으로 복구되었습니다.")
             st.rerun()
+            
+        # 학생 명단 신규 세팅
+        student_list_text = st.text_area("새로운 학생 명단을 붙여넣으세요 (엔터로 구분 / 기존 데이터는 삭제됩니다)", height=100)
+        if st.button("새 명단 등록 및 A/B 그룹 배정 시작"):
+            if not student_list_text.strip():
+                st.warning("명단을 입력해주세요.")
+            else:
+                names = [name.strip() for name in student_list_text.split('\n') if name.strip()]
+                random.shuffle(names)
+                mid = len(names) // 2
+                group_a = names[:mid]
+                group_b = names[mid:]
+                
+                insert_data = []
+                for name in group_a:
+                    insert_data.append({"name": name, "group_tag": "A", "balance": 1000000, "stock_ratio": 0.5, "last_completed_phase": 0})
+                for name in group_b:
+                    insert_data.append({"name": name, "group_tag": "B", "balance": 1000000, "stock_ratio": 0.5, "last_completed_phase": 0})
+                    
+                try:
+                    supabase.table("asset_allocation_player").delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
+                    supabase.table("asset_allocation_player").insert(insert_data).execute()
+                    st.success(f"총 {len(names)}명 등록 완료! (A그룹: {len(group_a)}명, B그룹: {len(group_b)}명)")
+                except Exception as e:
+                    st.error(f"오류가 발생했습니다: {e}")
