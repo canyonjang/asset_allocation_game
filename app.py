@@ -15,7 +15,7 @@ market_data = {
     2: {"stock": 20.0, "bond": 0.5, "label": "1년차 2분기"},
     3: {"stock": 8.5, "bond": 0.2, "label": "1년차 3분기"},
     4: {"stock": 11.7, "bond": -0.5, "label": "1년차 4분기 (연말 결산)"}
-    # 필요시 5~12분기 데이터를 계속 추가할 수 있습니다.
+    # 필요에 따라 5~12분기 데이터를 계속 추가할 수 있습니다.
 }
 
 # B그룹을 위한 K-POP 퀴즈 (분기별 1개)
@@ -72,7 +72,7 @@ if app_mode == "🙋‍♂️ 학생 로그인":
                 
                 new_stock_ratio = st.slider("다음 분기를 위한 '주식' 투자 비중을 결정하세요 (%)", 0, 100, int(user['stock_ratio']*100))
                 if st.button("비중 확정 및 제출"):
-                    # 실제 앱에서는 여기서 DB에 비중을 업데이트하고 계산하는 로직이 들어갑니다.
+                    # 향후 수익률 계산 로직이 들어갈 자리입니다.
                     st.success("제출 완료! 다음 분기를 기다려주세요.")
                     
             # --- [B그룹: 1~3분기는 퀴즈, 4분기는 연말 정산] ---
@@ -90,30 +90,83 @@ if app_mode == "🙋‍♂️ 학생 로그인":
                                 st.error(f"오답입니다. 정답은 '{quiz['ans']}' 입니다.")
                 else: # 4분기 (연말 결산)
                     st.write("📊 **1년간의 투자 성과가 도착했습니다!**")
-                    # (실제로는 1~4분기 누적 수익률을 계산해서 보여줌)
                     st.write("1년간 묵혀둔 주식이 크게 반등했습니다!") 
                     new_stock_ratio = st.slider("내년을 위한 '주식' 투자 비중을 결정하세요 (%)", 0, 100, int(user['stock_ratio']*100))
                     if st.button("비중 확정 및 제출"):
                         st.success("제출 완료! 내년도 결과를 기다려주세요.")
 
+# ---------------------------------------------------------
+# 3. 선생님 대시보드 화면
+# ---------------------------------------------------------
 elif app_mode == "👨‍🏫 선생님 대시보드":
-    # (여기에 비밀번호 입력 로직을 추가하여 학생들의 접근을 막을 수 있습니다)
     st.title("👨‍🏫 관리자 대시보드 및 게임 통제")
     
-    st.write(f"**현재 진행 단계:** {current_phase}단계 (0=시작 전)")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("⏩ 다음 분기로 진행"):
-            new_phase = current_phase + 1
-            supabase.table("asset_allocation_game_state").update({"current_phase": new_phase}).eq("id", 1).execute()
-            st.success(f"{new_phase}단계로 넘어갔습니다. 학생들에게 화면을 새로고침하라고 안내해주세요.")
-    with col2:
-        if st.button("🔄 게임 초기화 (시작 전으로)"):
-            supabase.table("asset_allocation_game_state").update({"current_phase": 0}).eq("id", 1).execute()
-            st.warning("게임이 0단계로 초기화되었습니다.")
+    # --- [비밀번호 확인 로직] ---
+    if 'admin_auth' not in st.session_state:
+        st.session_state['admin_auth'] = False
+
+    if not st.session_state['admin_auth']:
+        st.info("선생님 전용 페이지입니다. 비밀번호를 입력해주세요.")
+        pw_input = st.text_input("비밀번호", type="password") 
+        if st.button("입장"):
+            if pw_input == "3383":
+                st.session_state['admin_auth'] = True
+                st.rerun() 
+            else:
+                st.error("비밀번호가 일치하지 않습니다.")
+                
+    else:
+        st.success("인증되었습니다.")
+        
+        if st.button("🔒 로그아웃"):
+            st.session_state['admin_auth'] = False
+            st.rerun()
             
-    # 아래에 이전 단계에서 만든 [명단 등록 및 그룹 배정] 코드를 그대로 두시면 됩니다.
-    st.divider()
-    st.subheader("👥 학생 명단 세팅 (최초 1회만)")
-    # ... (이전에 만든 명단 등록 코드) ...
+        st.write(f"**현재 진행 단계:** {current_phase}단계 (0=시작 전)")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("⏩ 다음 분기로 진행"):
+                new_phase = current_phase + 1
+                supabase.table("asset_allocation_game_state").update({"current_phase": new_phase}).eq("id", 1).execute()
+                st.success(f"{new_phase}단계로 넘어갔습니다. 학생들에게 화면을 새로고침하라고 안내해주세요.")
+        with col2:
+            if st.button("🔄 게임 초기화 (시작 전으로)"):
+                supabase.table("asset_allocation_game_state").update({"current_phase": 0}).eq("id", 1).execute()
+                st.warning("게임이 0단계로 초기화되었습니다.")
+                
+        st.divider()
+        st.subheader("👥 학생 명단 세팅 (최초 1회만)")
+        
+        student_list_text = st.text_area("학생 명단을 붙여넣으세요 (엔터로 구분)", height=150)
+        
+        if st.button("명단 등록 및 A/B 그룹 배정 시작"):
+            if not student_list_text.strip():
+                st.warning("명단을 입력해주세요.")
+            else:
+                names = [name.strip() for name in student_list_text.split('\n') if name.strip()]
+                random.shuffle(names)
+                mid = len(names) // 2
+                group_a = names[:mid]
+                group_b = names[mid:]
+                
+                # DB에 들어갈 데이터 형태 (초기 자산 100만 원, 주식 비중 50% 세팅 포함)
+                insert_data = []
+                for name in group_a:
+                    insert_data.append({"name": name, "group_tag": "A", "balance": 1000000, "stock_ratio": 0.5})
+                for name in group_b:
+                    insert_data.append({"name": name, "group_tag": "B", "balance": 1000000, "stock_ratio": 0.5})
+                    
+                try:
+                    # 기존 데이터가 있다면 모두 삭제 후 새로 등록
+                    supabase.table("asset_allocation_player").delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
+                    supabase.table("asset_allocation_player").insert(insert_data).execute()
+                    st.success(f"총 {len(names)}명 등록 완료! (A그룹: {len(group_a)}명, B그룹: {len(group_b)}명)")
+                    
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.write("**A그룹**", group_a)
+                    with c2:
+                        st.write("**B그룹**", group_b)
+                except Exception as e:
+                    st.error(f"오류가 발생했습니다: {e}")
