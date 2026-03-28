@@ -84,7 +84,6 @@ if app_mode == "🙋‍♂️ 학생 로그인":
             st.write(f"최종 자산은 **{final_balance:,.0f}원** 입니다.")
             st.info(f"📈 **누적 수익률:** {cum_return:.1f}%\n\n📊 **연 평균 수익률:** {ann_return:.1f}%")
             
-            # 퀴즈 결과 출력 (B그룹 한정)
             if user['group_tag'] == 'B':
                 total_quizzes = len(quizzes)
                 quiz_score = user.get('quiz_score') or 0
@@ -130,7 +129,6 @@ if app_mode == "🙋‍♂️ 학생 로그인":
                 if current_phase % 4 != 0: 
                     quiz = quizzes.get(current_phase)
                     
-                    # 퀴즈를 이미 제출한 경우
                     if st.session_state[submit_key] or user.get('last_completed_phase') == current_phase:
                         res_state = st.session_state.get(f"quiz_result_{current_phase}")
                         if res_state == "correct":
@@ -140,9 +138,7 @@ if app_mode == "🙋‍♂️ 학생 로그인":
                             st.error(f"❌ 오답입니다. (정답: {ans})")
                         st.info("✅ 퀴즈 제출이 완료되었습니다. 대기해주세요.")
                         
-                    # 퀴즈를 아직 제출하지 않은 경우
                     elif quiz:
-                        st.info("자산 운용팀에서 장기적 관점으로 자산을 굴리는 중입니다. 대기 시간 동안 퀴즈를 풀어보세요!")
                         st.write(f"**💡 Q. {quiz['q']}**")
                         answer = st.radio("정답을 선택하세요:", quiz['options'], key=f"q_{current_phase}")
                         if st.button("퀴즈 제출"):
@@ -256,16 +252,41 @@ elif app_mode == "👨‍🏫 교수님 대시보드":
             players = supabase.table("asset_allocation_player").select("*").execute().data
             df = pd.DataFrame(players)
             
+            # 그룹별 평균 계산
             avg_balance = df.groupby('group_tag')['balance'].mean().reset_index()
-            avg_balance['balance'] = avg_balance['balance'].astype(int)
+            val_a = avg_balance[avg_balance['group_tag']=='A']['balance'].values[0] if not avg_balance[avg_balance['group_tag']=='A'].empty else 0
+            val_b = avg_balance[avg_balance['group_tag']=='B']['balance'].values[0] if not avg_balance[avg_balance['group_tag']=='B'].empty else 0
+            
+            cum_ret_a = ((val_a / 1000000) - 1) * 100 if val_a else 0
+            ann_ret_a = ((val_a / 1000000) ** (1/3) - 1) * 100 if val_a else 0
+            cum_ret_b = ((val_b / 1000000) - 1) * 100 if val_b else 0
+            ann_ret_b = ((val_b / 1000000) ** (1/3) - 1) * 100 if val_b else 0
             
             col1, col2 = st.columns(2)
             with col1:
-                st.metric("A그룹 (근시안) 평균 자산", f"{avg_balance[avg_balance['group_tag']=='A']['balance'].values[0]:,.0f}원")
+                st.metric("A그룹 (근시안) 평균 자산", f"{val_a:,.0f}원")
+                st.info(f"📉 **평균 누적 수익률:** {cum_ret_a:.1f}%\n\n📊 **평균 연 수익률:** {ann_ret_a:.1f}%")
             with col2:
-                st.metric("B그룹 (장기) 평균 자산", f"{avg_balance[avg_balance['group_tag']=='B']['balance'].values[0]:,.0f}원")
+                st.metric("B그룹 (장기) 평균 자산", f"{val_b:,.0f}원")
+                st.info(f"📈 **평균 누적 수익률:** {cum_ret_b:.1f}%\n\n📊 **평균 연 수익률:** {ann_ret_b:.1f}%")
                 
             st.bar_chart(avg_balance.set_index('group_tag'))
+            
+            st.divider()
+            st.subheader("🏅 전체 학생 수익률 랭킹")
+            
+            # 개인별 누적 수익률 계산 및 정렬
+            df['cum_return'] = ((df['balance'] / 1000000) - 1) * 100
+            df_sorted = df.sort_values(by='cum_return', ascending=False).reset_index(drop=True)
+            
+            # 화면 출력용 데이터 프레임 가공
+            df_display = df_sorted[['name', 'group_tag', 'cum_return', 'balance']].copy()
+            df_display.index = df_display.index + 1 # 1등부터 시작
+            df_display.columns = ['이름', '소속 그룹', '누적 수익률(%)', '최종 자산(원)']
+            df_display['누적 수익률(%)'] = df_display['누적 수익률(%)'].apply(lambda x: f"{x:.1f}%")
+            df_display['최종 자산(원)'] = df_display['최종 자산(원)'].apply(lambda x: f"{int(x):,}")
+            
+            st.dataframe(df_display, use_container_width=True)
             
         st.divider()
         st.subheader("⚙️ 게임 초기화 및 학생 명단 관리")
