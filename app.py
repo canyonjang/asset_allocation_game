@@ -10,7 +10,6 @@ url = st.secrets["SUPABASE_URL"]
 key = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(url, key)
 
-# 12분기(3년) 수익률 시나리오
 market_data = {
     1: {"stock": -20.0, "bond": 1.2, "label": "1년차 1분기 (시장 급락)"},
     2: {"stock": 20.0, "bond": 1.0, "label": "1년차 2분기 (강한 반등)"},
@@ -72,10 +71,26 @@ if app_mode == "🙋‍♂️ 학생 로그인":
         
         st.write(f"**👤 참여자:** {user['name']} | **현재 자산:** {user['balance']:,.0f}원")
         
+        # --- [13단계: 학생 최종 화면] ---
         if current_phase == 13:
             st.balloons()
             st.header("🏆 3년간의 투자가 모두 종료되었습니다!")
-            st.write(f"최종 자산은 **{user['balance']:,.0f}원** 입니다. 전체 결과는 교수님 화면을 주목해주세요.")
+            
+            initial_balance = 1000000
+            final_balance = user['balance']
+            cum_return = ((final_balance / initial_balance) - 1) * 100
+            ann_return = ((final_balance / initial_balance) ** (1/3) - 1) * 100
+            
+            st.write(f"최종 자산은 **{final_balance:,.0f}원** 입니다.")
+            st.info(f"📈 **누적 수익률:** {cum_return:.1f}%\n\n📊 **연 평균 수익률:** {ann_return:.1f}%")
+            
+            # 퀴즈 결과 출력 (B그룹 한정)
+            if user['group_tag'] == 'B':
+                total_quizzes = len(quizzes)
+                quiz_score = user.get('quiz_score') or 0
+                st.success(f"🎯 **K-POP 퀴즈 결과:** 총 {total_quizzes}개 중 **{quiz_score}개** 정답!")
+                
+            st.write("전체 결과는 교수님 화면을 주목해주세요.")
             
         elif current_phase == 0:
             st.warning("⏳ 아직 게임이 시작되지 않았습니다. 교수님의 지시를 기다려주세요.")
@@ -113,29 +128,38 @@ if app_mode == "🙋‍♂️ 학생 로그인":
             # --- [B그룹: 분기 중 퀴즈 / 매년 말 성과 확인] ---
             elif user['group_tag'] == 'B':
                 if current_phase % 4 != 0: 
-                    st.info("자산 운용팀에서 장기적 관점으로 자산을 굴리는 중입니다. 대기 시간 동안 퀴즈를 풀어보세요!")
                     quiz = quizzes.get(current_phase)
                     
+                    # 퀴즈를 이미 제출한 경우
                     if st.session_state[submit_key] or user.get('last_completed_phase') == current_phase:
-                        st.success("✅ 퀴즈 제출이 완료되었습니다. 대기해주세요.")
+                        res_state = st.session_state.get(f"quiz_result_{current_phase}")
+                        if res_state == "correct":
+                            st.success("✅ 정답입니다! 훌륭해요 🎉")
+                        elif res_state == "incorrect":
+                            ans = quiz['ans'] if quiz else ""
+                            st.error(f"❌ 오답입니다. (정답: {ans})")
+                        st.info("✅ 퀴즈 제출이 완료되었습니다. 대기해주세요.")
+                        
+                    # 퀴즈를 아직 제출하지 않은 경우
                     elif quiz:
+                        st.info("자산 운용팀에서 장기적 관점으로 자산을 굴리는 중입니다. 대기 시간 동안 퀴즈를 풀어보세요!")
                         st.write(f"**💡 Q. {quiz['q']}**")
                         answer = st.radio("정답을 선택하세요:", quiz['options'], key=f"q_{current_phase}")
                         if st.button("퀴즈 제출"):
-                            supabase.table("asset_allocation_player").update({
-                                "last_completed_phase": current_phase
-                            }).eq("id", user['id']).execute()
+                            is_correct = (answer == quiz['ans'])
+                            st.session_state[f"quiz_result_{current_phase}"] = "correct" if is_correct else "incorrect"
                             
+                            current_score = user.get('quiz_score') or 0
+                            update_data = {"last_completed_phase": current_phase}
+                            if is_correct:
+                                update_data["quiz_score"] = current_score + 1
+                                
+                            supabase.table("asset_allocation_player").update(update_data).eq("id", user['id']).execute()
                             st.session_state[submit_key] = True
-                            if answer == quiz['ans']:
-                                st.success("정답입니다! 훌륭해요 🎉")
-                            else:
-                                st.error(f"오답입니다. 정답은 '{quiz['ans']}' 입니다.")
                             st.rerun()
                 else: 
                     st.write("📊 **1년간의 투자 성과가 도착했습니다!**")
                     
-                    # 1년(4분기) 누적 수익률 계산
                     start_p = current_phase - 3
                     stock_cum, bond_cum = 1.0, 1.0
                     for p in range(start_p, current_phase + 1):
@@ -243,12 +267,6 @@ elif app_mode == "👨‍🏫 교수님 대시보드":
                 
             st.bar_chart(avg_balance.set_index('group_tag'))
             
-            st.info("""
-            **💡 수업 포인트:**
-            A그룹은 1분기 폭락장(-20%)에서 고통을 느끼고 주식 비중을 낮춰, 이후의 V자 반등 혜택을 온전히 누리지 못했습니다. 
-            반면 1년 단위로 확인한 B그룹은 단기 소음에 휘둘리지 않고 주식의 높은 프리미엄을 획득했습니다. 이것이 인간의 '자기통제'와 관련된 근시안적 손실회피(MLA)입니다.
-            """)
-            
         st.divider()
         st.subheader("⚙️ 게임 초기화 및 학생 명단 관리")
         if st.button("🔄 게임 초기화 (시작 전으로 되돌리기 및 자산 리셋)"):
@@ -256,12 +274,12 @@ elif app_mode == "👨‍🏫 교수님 대시보드":
             supabase.table("asset_allocation_player").update({
                 "balance": 1000000, 
                 "stock_ratio": 0.5,
-                "last_completed_phase": 0
+                "last_completed_phase": 0,
+                "quiz_score": 0
             }).neq("id", "00000000-0000-0000-0000-000000000000").execute()
             st.warning("게임이 0단계로 초기화되고 모든 학생의 자산이 100만 원으로 복구되었습니다.")
             st.rerun()
             
-        # 학생 명단 신규 세팅
         student_list_text = st.text_area("새로운 학생 명단을 붙여넣으세요 (엔터로 구분 / 기존 데이터는 삭제됩니다)", height=100)
         if st.button("새 명단 등록 및 A/B 그룹 배정 시작"):
             if not student_list_text.strip():
@@ -275,9 +293,9 @@ elif app_mode == "👨‍🏫 교수님 대시보드":
                 
                 insert_data = []
                 for name in group_a:
-                    insert_data.append({"name": name, "group_tag": "A", "balance": 1000000, "stock_ratio": 0.5, "last_completed_phase": 0})
+                    insert_data.append({"name": name, "group_tag": "A", "balance": 1000000, "stock_ratio": 0.5, "last_completed_phase": 0, "quiz_score": 0})
                 for name in group_b:
-                    insert_data.append({"name": name, "group_tag": "B", "balance": 1000000, "stock_ratio": 0.5, "last_completed_phase": 0})
+                    insert_data.append({"name": name, "group_tag": "B", "balance": 1000000, "stock_ratio": 0.5, "last_completed_phase": 0, "quiz_score": 0})
                     
                 try:
                     supabase.table("asset_allocation_player").delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
